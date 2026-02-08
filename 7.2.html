@@ -496,7 +496,7 @@
 
                 let systemInstruction = "Вы — универсальный агроном-помощник.";
                 if (mode === 'doctor') {
-                    systemInstruction = "Вы — ИИ-Доктор растений и животных. Ваша задача — диагностировать болезни по симптомам, вредителей и дефицит минералов. Предлагайте органические и химические методы лечения.";
+                    systemInstruction = "Вы — ИИ-Доктор растений и животных. Ваш�� задача — диагностировать болезни по симптомам, вредителей и дефицит минералов. Предлагайте органические и химические методы лечения.";
                 } else if (mode === 'strat') {
                     systemInstruction = "Вы — эксперт по севообороту и планированию фермы. Помогайте пользователям составлять планы посадок на 4-5 лет, объясняйте, какие культуры восстанавливают почву после других.";
                 }
@@ -690,5 +690,11 @@
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
+
+    <!-- Vercel Speed Insights -->
+    <script>
+        window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };
+    </script>
+    <script defer src="/_vercel/speed-insights/script.js"></script>
 </body>
 </html>
