@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>EkoNova Mobile | Агросистема</title>
+
+    <!-- Скрипты: React, Babel, Tailwind -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Библиотеки: Icons & Maps -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        
+        :root {
+            --brand-lime: #d4f75f;
+            --brand-cyan: #0ea5e9;
+            --brand-purple: #a855f7;
+            --bg-dark: #0b0f19;
+            --bg-card: #151c2c;
+        }
+
+        body { 
+            font-family: 'Inter', sans-serif; 
+            overscroll-behavior-y: contain; 
+            -webkit-tap-highlight-color: transparent;
+            background-color: var(--bg-dark);
+        }
+
+        .glass {
+            background: rgba(21, 28, 44, 0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .animate-slide-up { animation: slideUp 0.3s ease-out forwards; }
+
+        .btn-purple {
+            background: #a855f7;
+            box-shadow: 0 4px 15px rgba(168, 85, 247, 0.3);
+        }
+
+        .pt-safe { padding-top: env(safe-area-inset-top); }
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+
+        .leaflet-container {
+            background: #0b121e !important;
+            border-radius: 40px;
+        }
+        .leaflet-tile {
+            filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
+        }
+        .leaflet-control-zoom, .leaflet-control-attribution {
+            display: none !important;
+        }
+
+        .tool-icon-tile {
+            width: 72px;
+            height: 72px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 8px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .tool-icon-tile:active {
+            transform: scale(0.85);
+        }
+
+        .typing-dots span {
+            animation: blink 1.4s infinite both;
+            display: inline-block;
+            width: 5px;
+            height: 5px;
+            background: currentColor;
+            border-radius: 50%;
+            margin: 0 2px;
+        }
+        .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes blink { 0% { opacity: 0.2; } 20% { opacity: 1; } 100% { opacity: 0.2; } }
+    </style>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: { 950: '#0b0f19', 900: '#111827', 800: '#151c2c', 700: '#1f2937' },
+                        brand: { lime: '#d4f75f', cyan: '#0ea5e9', purple: '#a855f7', red: '#ef4444' }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-dark-950 text-white transition-colors duration-300">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const apiKey = ""; 
+
+        const TRANSLATIONS = {
+            ru: {
+                tabs: { dash: "Главная", map: "Карта", ai: "ИИ", tools: "Инструменты" },
+                dash: { 
+                    welcome: "Привет, Фермер!", 
+                    status: "Все системы в норме",
+                    widgets: { map: "Карта полей", livestock: "Мал саны", soil: "Почва", notifications: "Билдирмелер" },
+                    fields: "Поля",
+                    notifLabel: "Уведомления"
+                },
+                notifications: {
+                    title: "Уведомления",
+                    list: [
+                        { id: 1, type: 'alert', text: "Критический уровень ГСМ в МТЗ 82.1", time: "10 мин назад" },
+                        { id: 2, type: 'info', text: "План полива Сектора 1 завершен", time: "1 час назад" }
+                    ]
+                },
+                ai: { 
+                    bot: "АгроБот", doc: "Доктор", strat: "Севооборот", 
+                    placeholder: "Задайте вопрос...", 
+                    modes: { chat: "ЧАТ", doctor: "ДОКТОР", strat: "ПЛАН" },
+                    suggestions: {
+                        chat: ["Как повысить урожай?", "План полива", "Прогноз погоды"],
+                        doctor: ["Желтые листья", "Вредители на томатах", "Болезни КРС"],
+                        strat: ["План на 4 года", "Что после пшеницы?", "Удобрение почвы"]
+                    }
+                },
+                tools: { 
+                    title: "КУРАЛДАР", agro: "КОМАНДА", rent: "ТЕХНИКА", calc: "ТОЮТ", inv: "КАМПА", weather: "АБА ЫРАЙЫ", bank: "БАНК", gov: "ГОС. ЖАРДАМ", settings: "ЫРАСТООЛОР" 
+                },
+                map: { title: "Карта полей", sector: "Сектор", status: "Статус", active: "Полив", ready: "Готов" },
+                livestock: { 
+                    title: "Калькулятор корма", 
+                    type: "РАЗНОВИДНОСТЬ СКОТА", 
+                    count: "КОЛИЧЕСТВО СКОТА (БАШ)", 
+                    calcBtn: "РАССЧИТАТЬ НА ГОД", 
+                    hay: "Сено (в год)", 
+                    grain: "Зерно (в год)",
+                    yearly: "Запас на год",
+                    animals: { cow: "Корова", sheep: "Овца", horse: "Лошадь", bull: "Бык" }
+                },
+                inventory: { fuel: "ТОПЛИВО (ДТ)", wheat: "ПШЕНИЦА" },
+                bank: { title: "Мой Банк", balance: "Баланс", transfer: "Перевод", loan: "Кредит", history: "История" },
+                gov: { title: "Гос. Поддержка", subsidies: "Субсидии", apply: "Подать заявку", myApp: "Мои заявки" },
+                team: { title: "Моя Команда", statusOnline: "В сети", statusField: "На поле" },
+                fleet: { title: "Автопарк", fuel: "Топливо", status: "Статус" }
+            },
+            ky: {
+                tabs: { dash: "Башкы", map: "Карта", ai: "ИИ", tools: "Куралдар" },
+                dash: { 
+                    welcome: "Салам, Фермер!", 
+                    status: "Баары жайында",
+                    widgets: { map: "Талаа картасы", livestock: "Мал саны", soil: "Топурак", notifications: "Билдирмелер" },
+                    fields: "Талаа",
+                    notifLabel: "Билдирме"
+                },
+                notifications: {
+                    title: "Билдирмелер",
+                    list: [
+                        { id: 1, type: 'alert', text: "МТЗ 82.1 техникасында отун аз калды", time: "10 мүн мурун" },
+                        { id: 2, type: 'info', text: "1-секторду сугаруу планы бүттү", time: "1 саат мурун" }
+                    ]
+                },
+                ai: { 
+                    bot: "АгроБот", doc: "Доктор", strat: "Алмаштыруу", 
+                    placeholder: "Суроо бериңиз...", 
+                    modes: { chat: "ЧАТ", doctor: "ДОКТОР", strat: "СТРАТ" },
+                    suggestions: {
+                        chat: ["Түшүмдү кантип көбөйтүү керек?", "Сугаруу планы", "Аба ырайы"],
+                        doctor: ["Жалбырактар саргайып жатат", "Помидордогу зыянкечтер", "Малдын оорулары"],
+                        strat: ["4 жылдык план", "Буудайдан кийин эмне?", "Топуракты семиртүү"]
+                    }
+                },
+                tools: { 
+                    title: "КУРАЛДАР", agro: "КОМАНДА", rent: "ТЕХНИКА", calc: "ТОЮТ", inv: "КАМПА", weather: "АБА ЫРАЙЫ", bank: "БАНК", gov: "ГОС. ЖАРДАМ", settings: "ЫРАСТООЛОР" 
+                },
+                map: { title: "Талаа картасы", sector: "Сектор", status: "Абал", active: "Сугаруу", ready: "Даяр" },
+                livestock: { 
+                    title: "Тоют калькулятору", 
+                    type: "МАЛДЫН ТҮРҮ", 
+                    count: "МАЛДЫН САНЫ (БАШ)", 
+                    calcBtn: "ЖЫЛЫНА ЭСЕПТӨӨ", 
+                    hay: "Чөп (жылына)", 
+                    grain: "Жем (жылына)",
+                    yearly: "Бир жылдык запас",
+                    animals: { cow: "Уй", sheep: "Кой", horse: "Жылкы", bull: "Бука" }
+                },
+                inventory: { fuel: "ЖАНАРМАЙ (ДТ)", wheat: "БУУДАЙ" },
+                bank: { title: "Менин Банкым", balance: "Баланс", transfer: "Которуу", loan: "Кредит", history: "Тарыхы" },
+                gov: { title: "Мамлекеттик жардам", subsidies: "Субсидиялар", apply: "Арыз берүү", myApp: "Менин арыздарым" },
+                team: { title: "Менин Командам", statusOnline: "Тармактуу", statusField: "Талаада" },
+                fleet: { title: "Автопарк", fuel: "Отун", status: "Абалы" }
+            }
+        };
+
+        const fetchGemini = async (prompt, systemInstruction) => {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const payload = { 
+                contents: [{ role: "user", parts: [{ text: prompt }] }], 
+                systemInstruction: { parts: [{ text: systemInstruction }] } 
+            };
+            try {
+                const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const data = await res.json();
+                return data.candidates?.[0]?.content?.parts?.[0]?.text || "Error";
+            } catch (err) { return "Connection Error"; }
+        };
+
+        const Modal = ({ isOpen, onClose, title, children }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 z-[100] flex items-end justify-center p-4">
+                    <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={onClose}></div>
+                    <div className="glass w-full max-w-lg rounded-t-[40px] p-6 animate-slide-up relative text-white max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border-t border-white/10">
+                        <div className="w-12 h-1.5 bg-gray-600 rounded-full mx-auto mb-4 opacity-50"></div>
+                        <div className="flex justify-between items-center mb-6 px-2">
+                            <h2 className="text-2xl font-black tracking-tight uppercase">{title}</h2>
+                            <button onClick={onClose} className="w-10 h-10 rounded-full bg-dark-700 flex items-center justify-center active:scale-90 transition-all"><i className="fa-solid fa-xmark"></i></button>
+                        </div>
+                        {children}
+                    </div>
+                </div>
+            );
+        };
+
+        const MapView = ({ lang }) => {
+            const mapContainer = useRef(null);
+            const mapObj = useRef(null);
+            const [selectedSector, setSelectedSector] = useState(null);
+            const t = TRANSLATIONS[lang].map;
+
+            useEffect(() => {
+                if (!mapObj.current && mapContainer.current) {
+                    mapObj.current = L.map(mapContainer.current, { center: [42.4907, 78.3936], zoom: 13, zoomControl: false });
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapObj.current);
+                    const s1 = L.polygon([[42.495, 78.380], [42.505, 78.385], [42.500, 78.395], [42.490, 78.390]], { color: '#0ea5e9', fillColor: '#0ea5e9', fillOpacity: 0.3 }).addTo(mapObj.current);
+                    s1.on('click', () => setSelectedSector({ name: t.sector + " 1", status: t.active, soil: "42%", area: "12.5 га" }));
+                    const tractorIcon = L.divIcon({ html: '<i class="fa-solid fa-tractor text-brand-lime text-2xl drop-shadow-md"></i>', className: 'custom-div-icon', iconSize: [30, 30], iconAnchor: [15, 15] });
+                    L.marker([42.498, 78.388], { icon: tractorIcon }).addTo(mapObj.current);
+                }
+                return () => { if (mapObj.current) { mapObj.current.remove(); mapObj.current = null; } };
+            }, [lang, t]);
+
+            return (
+                <div className="h-full pt-24 pb-20 px-4 animate-slide-up flex flex-col relative">
+                    <h1 className="text-3xl font-black text-white px-2 mb-6 tracking-tighter uppercase">{t.title}</h1>
+                    <div ref={mapContainer} className="flex-1 w-full bg-dark-800 shadow-2xl rounded-[40px] overflow-hidden relative z-10" style={{ minHeight: '300px' }}></div>
+                    {selectedSector && (
+                        <div className="absolute bottom-24 left-6 right-6 z-[20] glass p-6 rounded-[35px] animate-slide-up border-none shadow-2xl">
+                            <div className="flex justify-between items-start mb-4">
+                                <div><h4 className="text-xl font-black uppercase tracking-tight">{selectedSector.name}</h4><p className="text-[10px] font-black text-brand-cyan uppercase tracking-widest">{selectedSector.status}</p></div>
+                                <button onClick={() => setSelectedSector(null)} className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center"><i className="fa-solid fa-xmark"></i></button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="p-4 bg-white/5 rounded-2xl border border-white/5"><p className="text-[9px] font-black opacity-30 uppercase mb-1">{lang==='ky'?'Топурак':'Почва'}</p><p className="text-lg font-black">{selectedSector.soil}</p></div>
+                                <div className="p-4 bg-white/5 rounded-2xl border border-white/5"><p className="text-[9px] font-black opacity-30 uppercase mb-1">{lang==='ky'?'Аянты':'Площадь'}</p><p className="text-lg font-black">{selectedSector.area}</p></div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const TechniqueView = ({ lang }) => {
+            const t = TRANSLATIONS[lang].fleet;
+            const fleet = [
+                { name: "MTZ 82.1", fuel: 24, status: "Active", icon: "tractor" },
+                { name: "John Deere 6140", fuel: 85, status: "Ready", icon: "tractor" },
+                { name: "Claas Lexion", fuel: 45, status: "Service", icon: "truck-monster" }
+            ];
+            return (
+                <div className="space-y-4 pb-6 px-2">
+                    {fleet.map((item, i) => (
+                        <div key={i} className="p-6 bg-dark-800 rounded-[35px] flex items-center gap-5 border border-white/5">
+                            <div className="w-14 h-14 rounded-2xl bg-brand-cyan/10 flex items-center justify-center text-brand-cyan">
+                                <i className={`fa-solid fa-${item.icon} text-2xl`}></i>
+                            </div>
+                            <div className="flex-1">
+                                <h4 className="font-black text-lg">{item.name}</h4>
+                                <div className="flex justify-between items-center mt-2">
+                                    <span className="text-[10px] font-black uppercase opacity-40">{t.fuel}</span>
+                                    <span className="text-[10px] font-black uppercase text-brand-lime">{item.fuel}%</span>
+                                </div>
+                                <div className="w-full h-1.5 bg-white/5 rounded-full mt-1 overflow-hidden">
+                                    <div className="h-full bg-brand-lime" style={{ width: `${item.fuel}%` }}></div>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+        };
+
+        const AgroTeamView = ({ lang }) => {
+            const t = TRANSLATIONS[lang].team;
+            const team = [
+                { name: "Асан Усонов", role: "Агроном", status: t.statusOnline, img: "user" },
+                { name: "Бакыт Тороев", role: "Механизатор", status: t.statusField, img: "user" },
+                { name: "Айбек Садыков", role: "Оператор", status: t.statusOnline, img: "user" }
+            ];
+            return (
+                <div className="space-y-4 pb-6 px-2">
+                    {team.map((member, i) => (
+                        <div key={i} className="p-5 bg-dark-800 rounded-[30px] flex items-center gap-4 border border-white/5">
+                            <div className="w-12 h-12 rounded-full bg-dark-700 flex items-center justify-center text-slate-400">
+                                <i className="fa-solid fa-user"></i>
+                            </div>
+                            <div className="flex-1">
+                                <h4 className="font-black text-sm">{member.name}</h4>
+                                <p className="text-[10px] font-bold opacity-40 uppercase tracking-widest">{member.role}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className={`w-2 h-2 rounded-full ${member.status === t.statusOnline ? 'bg-brand-lime shadow-[0_0_8px_#d4f75f]' : 'bg-brand-cyan'}`}></div>
+                                <span className="text-[9px] font-black uppercase opacity-60">{member.status}</span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+        };
+
+        const BankView = ({ lang }) => {
+            const t = TRANSLATIONS[lang].bank;
+            return (
+                <div className="space-y-6 pb-6 px-2">
+                    <div className="p-8 bg-gradient-to-br from-blue-600 to-indigo-900 rounded-[40px] shadow-2xl relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-8 opacity-20"><i className="fa-solid fa-building-columns text-6xl"></i></div>
+                        <p className="text-[10px] font-black uppercase opacity-60 tracking-widest mb-1">{t.balance}</p>
+                        <h2 className="text-4xl font-black mb-6 tracking-tighter">450 680 <span className="text-lg opacity-60">СОМ</span></h2>
+                        <div className="flex justify-between items-end">
+                            <p className="text-[10px] font-bold tracking-widest">**** 8842</p>
+                            <div className="flex -space-x-3">
+                                <div className="w-8 h-8 rounded-full bg-red-500 opacity-80"></div>
+                                <div className="w-8 h-8 rounded-full bg-amber-500 opacity-80"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <button className="p-6 bg-dark-800 rounded-[35px] font-black uppercase text-xs tracking-widest flex flex-col items-center gap-3 active:scale-95 transition-all">
+                            <i className="fa-solid fa-paper-plane text-xl text-brand-cyan"></i>{t.transfer}
+                        </button>
+                        <button className="p-6 bg-dark-800 rounded-[35px] font-black uppercase text-xs tracking-widest flex flex-col items-center gap-3 active:scale-95 transition-all">
+                            <i className="fa-solid fa-hand-holding-dollar text-xl text-brand-lime"></i>{t.loan}
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const GovHelpView = ({ lang }) => {
+            const t = TRANSLATIONS[lang].gov;
+            const items = [
+                { title: "Субсидия на ГСМ", desc: "Скидка 15% на дизельное топливо", status: "Open" },
+                { title: "Льготное семя", desc: "Семена пшеницы 1-й репродукции", status: "Closed" }
+            ];
+            return (
+                <div className="space-y-4 pb-6 px-2">
+                    {items.map((item, i) => (
+                        <div key={i} className="p-6 bg-dark-800 rounded-[35px] border border-white/5">
+                            <div className="flex justify-between items-start mb-2">
+                                <h4 className="font-black text-sm uppercase">{item.title}</h4>
+                                <span className={`text-[8px] px-2 py-1 rounded-full font-black uppercase ${item.status==='Open'?'bg-brand-lime/10 text-brand-lime':'bg-white/5 text-white/30'}`}>{item.status}</span>
+                            </div>
+                            <p className="text-[11px] font-medium opacity-50 mb-4">{item.desc}</p>
+                            <button className="w-full py-3 bg-white/5 rounded-2xl font-black uppercase text-[10px] tracking-widest active:bg-brand-cyan active:text-white transition-all">
+                                {t.apply}
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            );
+        };
+
+        const LivestockCalculator = ({ lang }) => {
+            const t = TRANSLATIONS[lang].livestock;
+            const [animalType, setAnimalType] = useState('cow');
+            const [count, setCount] = useState(10);
+            const [res, setRes] = useState(null);
+
+            const animalData = {
+                cow: { hay: 12, grain: 2, icon: 'fa-cow' },
+                sheep: { hay: 2.5, grain: 0.4, icon: 'fa-cloud' },
+                horse: { hay: 15, grain: 4, icon: 'fa-horse' },
+                bull: { hay: 14, grain: 3, icon: 'fa-box' }
+            };
+
+            const handleCalculate = () => {
+                const data = animalData[animalType];
+                const c = parseInt(count) || 0;
+                const yearlyHay = (data.hay * c * 365);
+                const yearlyGrain = (data.grain * c * 365);
+                setRes({ hay: yearlyHay, grain: yearlyGrain });
+            };
+
+            return (
+                <div className="space-y-8 animate-slide-up p-2 pb-6">
+                    <div className="space-y-4">
+                        <label className="text-[10px] font-black text-slate-500 uppercase ml-2 tracking-widest">{t.type}</label>
+                        <div className="grid grid-cols-2 gap-3">
+                            {Object.keys(animalData).map(type => (
+                                <button key={type} onClick={() => setAnimalType(type)} className={`p-6 rounded-[28px] border-2 flex flex-col items-center gap-3 transition-all ${animalType === type ? 'border-brand-purple bg-brand-purple/10' : 'border-white/5 bg-dark-800 opacity-50'}`}>
+                                    <i className={`fa-solid ${animalData[type].icon} text-2xl ${animalType === type ? 'text-brand-purple' : 'text-slate-400'}`}></i>
+                                    <span className="text-[10px] font-black uppercase">{t.animals[type]}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase ml-2 tracking-widest">{t.count}</label>
+                        <input type="number" value={count} onChange={e => setCount(e.target.value)} className="w-full p-6 bg-dark-800 rounded-[28px] text-white font-black text-2xl outline-none border border-white/5 focus:border-brand-purple transition-all" />
+                    </div>
+                    <button onClick={handleCalculate} className="w-full py-6 btn-purple rounded-[28px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-brand-purple/20">{t.calcBtn}</button>
+                    {res && (
+                        <div className="space-y-4 animate-slide-up mt-6">
+                            <div className="flex items-center gap-2 px-2"><div className="h-[1px] flex-1 bg-white/10"></div><span className="text-[9px] font-black uppercase opacity-30 tracking-widest">{t.yearly}</span><div className="h-[1px] flex-1 bg-white/10"></div></div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="p-6 bg-dark-800 rounded-[35px] text-center border border-white/5 relative overflow-hidden">
+                                    <p className="text-[9px] font-black opacity-40 uppercase mb-2 tracking-widest">{t.hay}</p>
+                                    <p className="text-2xl font-black text-white">{(res.hay / 1000).toFixed(1)} <span className="text-xs font-bold text-slate-500">т</span></p>
+                                    <p className="text-[9px] font-bold text-brand-lime mt-1">{res.hay.toLocaleString()} кг</p>
+                                </div>
+                                <div className="p-6 bg-dark-800 rounded-[35px] text-center border border-white/5 relative overflow-hidden">
+                                    <p className="text-[9px] font-black opacity-40 uppercase mb-2 tracking-widest">{t.grain}</p>
+                                    <p className="text-2xl font-black text-white">{(res.grain / 1000).toFixed(1)} <span className="text-xs font-bold text-slate-500">т</span></p>
+                                    <p className="text-[9px] font-bold text-brand-purple mt-1">{res.grain.toLocaleString()} кг</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const Dashboard = ({ lang, setActiveTab, notifications }) => {
+            const t = TRANSLATIONS[lang].dash;
+            return (
+                <div className="p-4 pt-24 space-y-6 animate-slide-up pb-24 overflow-y-auto h-full no-scrollbar">
+                    <div className="bg-brand-lime p-8 rounded-[40px] text-dark-950 shadow-2xl relative overflow-hidden">
+                        <div className="absolute -right-10 -top-10 w-32 h-32 bg-white/20 rounded-full blur-3xl"></div>
+                        <h1 className="text-4xl font-black tracking-tighter leading-none mb-2">{t.welcome}</h1>
+                        <p className="font-bold opacity-60 uppercase text-[10px] tracking-widest">{t.status}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <button onClick={() => setActiveTab('map')} className="p-6 bg-dark-800 rounded-[35px] h-36 flex flex-col justify-between text-left active:scale-95 transition-all">
+                            <p className="text-[10px] font-black opacity-40 uppercase tracking-widest">{t.widgets.map}</p>
+                            <div className="flex items-center gap-2 text-brand-cyan"><i className="fa-solid fa-map-location-dot text-2xl"></i><h3 className="text-2xl font-black">2 {t.fields}</h3></div>
+                        </button>
+                        <div onClick={() => setActiveTab('tools')} className="p-6 bg-dark-800 rounded-[35px] h-36 flex flex-col justify-between cursor-pointer active:scale-95 transition-all">
+                            <p className="text-[10px] font-black opacity-40 uppercase tracking-widest">{t.widgets.livestock}</p>
+                            <div className="flex items-center gap-2 text-brand-purple"><i className="fa-solid fa-cow text-2xl"></i><h3 className="text-3xl font-black">128</h3></div>
+                        </div>
+                        <div className="p-6 bg-dark-800 rounded-[35px] h-32 flex flex-col justify-between col-span-2 text-left relative overflow-hidden">
+                            <p className="text-[10px] font-black opacity-40 uppercase tracking-widest">{t.widgets.notifications}</p>
+                            <div className="flex items-center gap-4 text-brand-red"><i className="fa-solid fa-bell text-xl animate-bounce"></i><h3 className="text-2xl font-black text-white">{notifications.length} {t.notifLabel}</h3></div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const AIView = ({ lang }) => {
+            const t = TRANSLATIONS[lang].ai;
+            const [mode, setMode] = useState('chat');
+            const [messages, setMessages] = useState([{ id: 0, role: 'bot', text: t.placeholder }]);
+            const [input, setInput] = useState('');
+            const [loading, setLoading] = useState(false);
+            const scrollRef = useRef();
+
+            useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [messages, loading]);
+
+            const handleSend = async (forcedText = null) => {
+                const txt = forcedText || input;
+                if (!txt.trim()) return;
+                
+                setMessages(prev => [...prev, { id: Date.now(), role: 'user', text: txt }]); 
+                setInput('');
+                setLoading(true);
+
+                let systemInstruction = "Вы — универсальный агроном-помощник.";
+                if (mode === 'doctor') {
+                    systemInstruction = "Вы — ИИ-Доктор растений и животных. Ваша задача — диагностировать болезни по симптомам, вредителей и дефицит минералов. Предлагайте органические и химические методы лечения.";
+                } else if (mode === 'strat') {
+                    systemInstruction = "Вы — эксперт по севообороту и планированию фермы. Помогайте пользователям составлять планы посадок на 4-5 лет, объясняйте, какие культуры восстанавливают почву после других.";
+                }
+
+                const res = await fetchGemini(txt, systemInstruction);
+                setMessages(prev => [...prev, { id: Date.now()+1, role: 'bot', text: res }]);
+                setLoading(false);
+            };
+
+            const modeColors = {
+                chat: 'brand-cyan',
+                doctor: 'brand-red',
+                strat: 'brand-purple'
+            };
+
+            return (
+                <div className={`h-full flex flex-col pt-24 bg-dark-950 overflow-hidden transition-all duration-300`}>
+                    {/* Mode Selector */}
+                    <div className="flex px-4 gap-2 mb-4 shrink-0">
+                        {['chat', 'doctor', 'strat'].map(m => (
+                            <button 
+                                key={m} 
+                                onClick={() => { setMode(m); if(messages.length === 1) setMessages([{ id: 0, role: 'bot', text: t.placeholder }]); }} 
+                                className={`flex-1 py-3.5 rounded-2xl font-black text-[10px] transition-all border-b-4 ${mode === m ? `bg-${modeColors[m]} text-white border-white/20 shadow-lg` : 'bg-dark-800 text-slate-500 border-transparent'}`}
+                            >
+                                <i className={`fa-solid ${m==='chat'?'fa-comments':m==='doctor'?'fa-stethoscope':'fa-calendar-days'} mr-1`}></i>
+                                {t.modes[m]}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 pb-44 no-scrollbar">
+                        {messages.length === 1 && (
+                            <div className="animate-slide-up space-y-3">
+                                <p className="text-[10px] font-black uppercase opacity-30 text-center tracking-widest mb-4">Быстрые вопросы</p>
+                                <div className="grid grid-cols-1 gap-2">
+                                    {t.suggestions[mode].map((s, idx) => (
+                                        <button 
+                                            key={idx} 
+                                            onClick={() => handleSend(s)}
+                                            className="p-4 bg-dark-800 rounded-2xl text-left border border-white/5 active:scale-95 transition-all hover:bg-dark-700"
+                                        >
+                                            <span className="text-xs font-bold text-white/80">{s}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {messages.map(m => (
+                            <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-[85%] p-5 rounded-[28px] ${m.role === 'user' ? `bg-${modeColors[mode]} text-white rounded-tr-none shadow-lg` : 'bg-dark-800 rounded-tl-none border border-white/5 shadow-sm'}`}>
+                                    <p className="text-sm font-semibold leading-relaxed whitespace-pre-wrap">{m.text}</p>
+                                </div>
+                            </div>
+                        ))}
+                        
+                        {loading && (
+                            <div className="flex justify-start">
+                                <div className="bg-dark-800 p-5 rounded-[28px] rounded-tl-none border border-white/5">
+                                    <div className="typing-dots text-brand-cyan"><span></span><span></span><span></span></div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="fixed bottom-[85px] left-0 right-0 p-4 z-40">
+                        <div className={`glass bg-dark-800/90 rounded-[32px] p-2 flex items-center gap-3 border-2 shadow-2xl transition-all duration-300 ${mode === 'doctor' ? 'border-brand-red/30' : mode === 'strat' ? 'border-brand-purple/30' : 'border-brand-cyan/30'}`}>
+                            <button className="w-14 h-14 rounded-2xl flex items-center justify-center text-white bg-dark-700 active:scale-90 transition-transform"><i className="fa-solid fa-camera text-xl"></i></button>
+                            <input 
+                                value={input} 
+                                onChange={e => setInput(e.target.value)} 
+                                onKeyPress={e => e.key === 'Enter' && handleSend()} 
+                                className="flex-1 bg-transparent outline-none text-white font-bold px-2 placeholder:opacity-30" 
+                                placeholder={t.placeholder} 
+                            />
+                            <button 
+                                onClick={() => handleSend()} 
+                                className={`p-3 active:scale-90 transition-transform ${loading ? 'opacity-20' : `text-${modeColors[mode]}`}`}
+                                disabled={loading}
+                            >
+                                <i className="fa-solid fa-paper-plane text-2xl"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const SettingsView = ({ lang, setLang, theme, setTheme }) => {
+            return (
+                <div className="space-y-4 pb-10 px-2 animate-slide-up">
+                    <div className="p-6 bg-dark-800 rounded-[35px] space-y-4">
+                        <div className="flex justify-between items-center">
+                            <span className="font-bold text-sm">Тил / Язык</span>
+                            <div className="flex bg-dark-700 p-1 rounded-xl">
+                                <button onClick={() => setLang('ru')} className={`px-4 py-2 rounded-lg text-xs font-black uppercase ${lang === 'ru' ? 'bg-brand-lime text-dark-950' : 'text-white'}`}>RU</button>
+                                <button onClick={() => setLang('ky')} className={`px-4 py-2 rounded-lg text-xs font-black uppercase ${lang === 'ky' ? 'bg-brand-lime text-dark-950' : 'text-white'}`}>KY</button>
+                            </div>
+                        </div>
+                        <div className="flex justify-between items-center pt-2 border-t border-white/5">
+                            <span className="font-bold text-sm">Тема</span>
+                            <button onClick={() => setTheme(theme==='dark'?'light':'dark')} className="p-3 bg-dark-700 rounded-xl text-brand-lime transition-all active:scale-90">
+                                <i className={`fa-solid ${theme==='dark'?'fa-moon':'fa-sun'}`}></i>
+                            </button>
+                        </div>
+                    </div>
+                    <button className="w-full py-5 bg-red-500/10 text-red-500 rounded-[28px] font-black uppercase text-xs tracking-widest active:bg-red-500 active:text-white transition-all">Выйти / Чыгуу</button>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('dash');
+            const [lang, setLang] = useState('ky');
+            const [theme, setTheme] = useState('dark');
+            const [activeTool, setActiveTool] = useState(null);
+            const initialNotifs = TRANSLATIONS[lang]?.notifications?.list || [];
+            const [notifications, setNotifications] = useState(initialNotifs);
+
+            useEffect(() => { 
+                if (TRANSLATIONS[lang]?.notifications) setNotifications(TRANSLATIONS[lang].notifications.list);
+            }, [lang]);
+
+            const toolsGrid = [
+                { id: 'agro', icon: 'fa-users', color: 'bg-orange-500', label: TRANSLATIONS[lang].tools.agro, component: <AgroTeamView lang={lang} /> },
+                { id: 'rent', icon: 'fa-tractor', color: 'bg-blue-600', label: TRANSLATIONS[lang].tools.rent, component: <TechniqueView lang={lang} /> },
+                { id: 'calc', icon: 'fa-calculator', color: 'bg-brand-purple', label: TRANSLATIONS[lang].tools.calc, component: <LivestockCalculator lang={lang} /> },
+                { id: 'inv', icon: 'fa-boxes-stacked', color: 'bg-emerald-500', label: TRANSLATIONS[lang].tools.inv, component: (
+                    <div className="p-10 bg-dark-800 rounded-[40px] text-center flex flex-col items-center border border-white/5">
+                        <i className="fa-solid fa-gas-pump text-5xl text-red-500 mb-4 drop-shadow-lg"></i>
+                        <h4 className="text-[11px] font-black uppercase text-slate-500 mb-2 tracking-widest">{TRANSLATIONS[lang].inventory.fuel}</h4>
+                        <p className="text-4xl font-black text-white">4500 л</p>
+                    </div>
+                ) },
+                { id: 'bank', icon: 'fa-building-columns', color: 'bg-blue-700', label: TRANSLATIONS[lang].tools.bank, component: <BankView lang={lang} /> },
+                { id: 'gov', icon: 'fa-landmark-flag', color: 'bg-red-600', label: TRANSLATIONS[lang].tools.gov, component: <GovHelpView lang={lang} /> },
+                { id: 'settings', icon: 'fa-gear', color: 'bg-slate-600', label: TRANSLATIONS[lang].tools.settings, component: <SettingsView lang={lang} setLang={setLang} theme={theme} setTheme={setTheme} /> }
+            ];
+
+            const tabs = [
+                { id: 'dash', icon: 'fa-house', label: TRANSLATIONS[lang].tabs.dash },
+                { id: 'map', icon: 'fa-map-location-dot', label: TRANSLATIONS[lang].tabs.map },
+                { id: 'ai', icon: 'fa-brain', label: TRANSLATIONS[lang].tabs.ai },
+                { id: 'tools', icon: 'fa-ellipsis', label: TRANSLATIONS[lang].tabs.tools }
+            ];
+
+            return (
+                <div className={`min-h-screen flex flex-col transition-colors duration-500 ${theme === 'dark' ? 'bg-dark-950 text-white' : 'bg-gray-100 text-dark-950'}`}>
+                    <header className="fixed top-0 left-0 right-0 z-[60] px-4 pt-safe h-20 flex items-center justify-between pointer-events-none">
+                        <div className="w-12 h-12 bg-brand-lime rounded-2xl flex items-center justify-center text-dark-950 shadow-lg pointer-events-auto border-2 border-white/20 active:scale-90 transition-all"><i className="fa-solid fa-user"></i></div>
+                        <div className="flex gap-2 pointer-events-auto">
+                            <button onClick={() => setTheme(t => t==='dark'?'light':'dark')} className="w-14 h-14 bg-dark-800 rounded-2xl flex items-center justify-center shadow-lg active:scale-90 transition-transform"><i className={`fa-solid ${theme==='dark'?'fa-sun text-amber-500':'fa-moon text-blue-500'}`}></i></button>
+                            <button onClick={() => setLang(l => l==='ru'?'ky':'ru')} className="w-14 h-14 bg-dark-800 rounded-2xl flex items-center justify-center font-black text-sm text-white shadow-lg active:scale-90 uppercase tracking-widest">{lang}</button>
+                        </div>
+                    </header>
+                    <main className="flex-1 relative overflow-hidden">
+                        {activeTab === 'dash' && <Dashboard lang={lang} setActiveTab={setActiveTab} notifications={notifications} />}
+                        {activeTab === 'map' && <MapView lang={lang} />}
+                        {activeTab === 'ai' && <AIView lang={lang} />}
+                        {activeTab === 'tools' && (
+                            <div className="p-4 pt-24 space-y-8 animate-slide-up pb-24 h-full overflow-y-auto no-scrollbar">
+                                <h1 className="text-3xl font-black px-2 tracking-tighter uppercase">{TRANSLATIONS[lang].tools.title}</h1>
+                                <div className="grid grid-cols-3 gap-y-10 gap-x-4">
+                                    {toolsGrid.map(tool => (
+                                        <button key={tool.id} onClick={() => setActiveTool(tool.id)} className="flex flex-col items-center group transition-transform active:scale-90">
+                                            <div className={`tool-icon-tile ${tool.color} shadow-2xl transition-all`}><i className={`fa-solid ${tool.icon} text-3xl text-white`}></i></div>
+                                            <span className="text-[10px] font-black opacity-60 uppercase tracking-widest text-center leading-tight mt-1">{tool.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                                <Modal isOpen={!!activeTool} onClose={() => setActiveTool(null)} title={TRANSLATIONS[lang].tools[activeTool] || activeTool}>
+                                    {toolsGrid.find(t => t.id === activeTool)?.component}
+                                </Modal>
+                            </div>
+                        )}
+                    </main>
+                    <nav className="fixed bottom-0 left-0 right-0 glass bg-dark-950/90 border-t border-white/5 z-50 pb-safe">
+                        <div className="flex justify-around items-center h-16">
+                            {tabs.map(tab => (
+                                <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex flex-col items-center justify-center w-full h-full transition-all ${activeTab === tab.id ? 'text-brand-cyan scale-110' : 'text-slate-500'}`}>
+                                    <i className={`fa-solid ${tab.icon} text-lg mb-1`}></i>
+                                    <span className="text-[10px] font-black uppercase tracking-tighter">{tab.label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </nav>
+                </div>
+            );
+        };
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
